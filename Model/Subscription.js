@@ -21,12 +21,12 @@ const subscriptionSchema = new mongoose.Schema(
         },
 
         amount: {
-            type: Number, // INR
+            type: Number,
             required: true,
         },
 
-        orderId: String,        // Razorpay order id
-        transactionId: String, // Razorpay payment id
+        orderId: String,
+        transactionId: String,
 
         startDate: {
             type: Date,
