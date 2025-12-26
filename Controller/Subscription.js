@@ -19,124 +19,7 @@ const getEndDate = (planType) => {
     return now;
 };
 
-// exports.createPaymentLink = async (req, res) => {
-//     try {
-//         const { userId, planId, planType, amount, name, email, contact } = req.body;
-
-//         if (!userId || !planId || !planType || !amount) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: "userId, planId, planType, amount required",
-//             });
-//         }
-
-//         const activeSub = await Subscription.findOne({
-//             userId,
-//             status: "active",
-//             endDate: { $gt: new Date() },
-//         });
-
-//         if (activeSub) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: "Active subscription already exists",
-//             });
-//         }
-
-//         const paymentLink = await razorpay.paymentLink.create({
-//             amount: amount * 100,
-//             currency: "INR",
-//             description: `Subscription - ${planType}`,
-//             customer: {
-//                 name: name || "User",
-//                 email: email || "test@gmail.com",
-//                 contact: contact || "9999999999",
-//             },
-//             notify: { sms: true, email: true },
-
-//             callback_url: "http://192.168.1.69:8002/api/subscription/verify-payment-link",
-//             callback_method: "get",
-
-//             notes: {
-//                 userId: userId.toString(),
-//                 planId: planId.toString(),
-//                 planType,
-//                 amount: amount.toString(),
-//             },
-//         });
-
-//         res.json({
-//             success: true,
-//             checkout_url: paymentLink.short_url,
-//             payment_link_id: paymentLink.id,
-//         });
-//     } catch (err) {
-//         console.error("Create Payment Link Error:", err);
-//         res.status(500).json({ success: false, message: err.message });
-//     }
-// };
-
-
-// exports.verifyPaymentLink = async (req, res) => {
-//     try {
-//         const {
-//             razorpay_payment_link_id,
-//             razorpay_payment_id,
-//         } = req.query;
-
-//         if (!razorpay_payment_link_id) {
-//             return res.redirect("myapp://payment-failure");
-//         }
-
-//         const paymentLink = await razorpay.paymentLink.fetch(
-//             razorpay_payment_link_id
-//         );
-
-//         if (!paymentLink || paymentLink.status !== "paid") {
-//             return res.redirect("myapp://payment-failure");
-//         }
-
-//         const { userId, planId, planType, amount } = paymentLink.notes || {};
-
-//         if (!userId || !planType || !amount) {
-//             return res.redirect("myapp://payment-failure");
-//         }
-
-//         const existingActive = await Subscription.findOne({
-//             userId,
-//             status: "active",
-//             endDate: { $gt: new Date() },
-//         });
-
-//         if (existingActive) {
-//             return res.redirect("myapp://payment-failure");
-//         }
-
-//         const subscription = new Subscription({
-//             userId,
-//             planId,
-//             planType,
-//             amount: Number(amount),
-//             orderId: razorpay_payment_link_id,
-//             transactionId: razorpay_payment_id || null,
-//             endDate: getEndDate(planType),
-//             status: "active",
-//         });
-
-//         await subscription.save();
-
-//         return res.redirect(
-//             "myapp://payment-success"
-//         );
-
-//     } catch (err) {
-//         console.error("Verify Payment Link Error:", err);
-//         return res.redirect("myapp://payment-failure");
-//     }
-// };
-
-
-exports.createPaymentLinkPost = async (req, res) => {
+exports.createPaymentLink = async (req, res) => {
     try {
         const { userId, planId, planType, amount, name, email, contact } = req.body;
 
@@ -170,6 +53,10 @@ exports.createPaymentLinkPost = async (req, res) => {
                 contact: contact || "9999999999",
             },
             notify: { sms: true, email: true },
+
+            callback_url: "http://192.168.1.69:8002/api/subscription/verify-payment-link",
+            callback_method: "get",
+
             notes: {
                 userId: userId.toString(),
                 planId: planId.toString(),
@@ -178,52 +65,43 @@ exports.createPaymentLinkPost = async (req, res) => {
             },
         });
 
-        return res.status(200).json({
+        res.json({
             success: true,
             checkout_url: paymentLink.short_url,
             payment_link_id: paymentLink.id,
         });
-
     } catch (err) {
-        console.error("Create Payment Error:", err);
-        return res.status(500).json({
-            success: false,
-            message: err.message,
-        });
+        console.error("Create Payment Link Error:", err);
+        res.status(500).json({ success: false, message: err.message });
     }
 };
 
-exports.verifyPaymentPost = async (req, res) => {
-    try {
-        const { payment_link_id } = req.body;
 
-        if (!payment_link_id) {
-            return res.status(400).json({
-                success: false,
-                message: "payment_link_id is required",
-            });
+exports.verifyPaymentLink = async (req, res) => {
+    try {
+        const {
+            razorpay_payment_link_id,
+            razorpay_payment_id,
+        } = req.query;
+
+        if (!razorpay_payment_link_id) {
+            return res.redirect("myapp://payment-failure");
         }
 
-        // ✅ SOURCE OF TRUTH
-        const paymentLink = await razorpay.paymentLink.fetch(payment_link_id);
+        const paymentLink = await razorpay.paymentLink.fetch(
+            razorpay_payment_link_id
+        );
 
         if (!paymentLink || paymentLink.status !== "paid") {
-            return res.status(400).json({
-                success: false,
-                message: "Payment not completed",
-            });
+            return res.redirect("myapp://payment-failure");
         }
 
         const { userId, planId, planType, amount } = paymentLink.notes || {};
 
         if (!userId || !planType || !amount) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid payment data",
-            });
+            return res.redirect("myapp://payment-failure");
         }
 
-        // ❌ prevent duplicate
         const existingActive = await Subscription.findOne({
             userId,
             status: "active",
@@ -231,40 +109,162 @@ exports.verifyPaymentPost = async (req, res) => {
         });
 
         if (existingActive) {
-            return res.status(400).json({
-                success: false,
-                message: "Subscription already active",
-            });
+            return res.redirect("myapp://payment-failure");
         }
 
-        // 🟢 create subscription
         const subscription = new Subscription({
             userId,
             planId,
             planType,
             amount: Number(amount),
-            orderId: paymentLink.id,
-            transactionId: paymentLink.payments?.[0]?.payment_id || null,
+            orderId: razorpay_payment_link_id,
+            transactionId: razorpay_payment_id || null,
             endDate: getEndDate(planType),
             status: "active",
         });
 
         await subscription.save();
 
-        return res.status(200).json({
-            success: true,
-            message: "Subscription activated",
-            data: subscription,
-        });
+        return res.redirect(
+            "myapp://payment-success"
+        );
 
     } catch (err) {
-        console.error("Verify Payment Error:", err);
-        return res.status(500).json({
-            success: false,
-            message: err.message,
-        });
+        console.error("Verify Payment Link Error:", err);
+        return res.redirect("myapp://payment-failure");
     }
 };
+
+
+// exports.createPaymentLinkPost = async (req, res) => {
+//     try {
+//         const { userId, planId, planType, amount, name, email, contact } = req.body;
+
+//         if (!userId || !planId || !planType || !amount) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "userId, planId, planType, amount required",
+//             });
+//         }
+
+//         const activeSub = await Subscription.findOne({
+//             userId,
+//             status: "active",
+//             endDate: { $gt: new Date() },
+//         });
+
+//         if (activeSub) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Active subscription already exists",
+//             });
+//         }
+
+//         const paymentLink = await razorpay.paymentLink.create({
+//             amount: amount * 100,
+//             currency: "INR",
+//             description: `Subscription - ${planType}`,
+//             customer: {
+//                 name: name || "User",
+//                 email: email || "test@gmail.com",
+//                 contact: contact || "9999999999",
+//             },
+//             notify: { sms: true, email: true },
+//             notes: {
+//                 userId: userId.toString(),
+//                 planId: planId.toString(),
+//                 planType,
+//                 amount: amount.toString(),
+//             },
+//         });
+
+//         return res.status(200).json({
+//             success: true,
+//             checkout_url: paymentLink.short_url,
+//             payment_link_id: paymentLink.id,
+//         });
+
+//     } catch (err) {
+//         console.error("Create Payment Error:", err);
+//         return res.status(500).json({
+//             success: false,
+//             message: err.message,
+//         });
+//     }
+// };
+
+// exports.verifyPaymentPost = async (req, res) => {
+//     try {
+//         const { payment_link_id } = req.body;
+
+//         if (!payment_link_id) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "payment_link_id is required",
+//             });
+//         }
+
+//         // ✅ SOURCE OF TRUTH
+//         const paymentLink = await razorpay.paymentLink.fetch(payment_link_id);
+
+//         if (!paymentLink || paymentLink.status !== "paid") {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Payment not completed",
+//             });
+//         }
+
+//         const { userId, planId, planType, amount } = paymentLink.notes || {};
+
+//         if (!userId || !planType || !amount) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Invalid payment data",
+//             });
+//         }
+
+//         // ❌ prevent duplicate
+//         const existingActive = await Subscription.findOne({
+//             userId,
+//             status: "active",
+//             endDate: { $gt: new Date() },
+//         });
+
+//         if (existingActive) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Subscription already active",
+//             });
+//         }
+
+//         // 🟢 create subscription
+//         const subscription = new Subscription({
+//             userId,
+//             planId,
+//             planType,
+//             amount: Number(amount),
+//             orderId: paymentLink.id,
+//             transactionId: paymentLink.payments?.[0]?.payment_id || null,
+//             endDate: getEndDate(planType),
+//             status: "active",
+//         });
+
+//         await subscription.save();
+
+//         return res.status(200).json({
+//             success: true,
+//             message: "Subscription activated",
+//             data: subscription,
+//         });
+
+//     } catch (err) {
+//         console.error("Verify Payment Error:", err);
+//         return res.status(500).json({
+//             success: false,
+//             message: err.message,
+//         });
+//     }
+// };
 
 exports.verifyPaymentAndCreateSubscription = async (req, res) => {
     try {
