@@ -1,8 +1,11 @@
 const User = require("../Model/User");
 const Otp = require("../Model/Otp");
 const crypto = require("crypto");
+const sendOtpSms = require("../utills/sendOtpSms");
 
-const normalizePhone = (p) => String(p || "").replace(/\D/g, "");
+const normalizePhone = (phoneNumber) => {
+  return phoneNumber.replace(/[^\d]/g, ""); // removes non-digit characters
+};
 
 exports.signup = async (req, res) => {
   try {
@@ -15,7 +18,6 @@ exports.signup = async (req, res) => {
         .json({ message: "Name, email, and phone are required" });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({
       $or: [{ phoneNumber }, { email }],
     });
@@ -26,7 +28,6 @@ exports.signup = async (req, res) => {
         .json({ message: "User already exists. Please login." });
     }
 
-    // Create user directly
     const user = await User.create({
       phoneNumber,
       name,
@@ -50,13 +51,6 @@ exports.signup = async (req, res) => {
 //       return res.status(400).json({ message: "Phone number is required" });
 //     }
 
-//     const user = await User.findOne({ phoneNumber });
-//     if (!user) {
-//       return res
-//         .status(404)
-//         .json({ message: "User not found. Please signup." });
-//     }
-
 //     const otp = String(crypto.randomInt(1000, 10000));
 //     const expiry = new Date(Date.now() + 2 * 60 * 1000);
 
@@ -67,7 +61,7 @@ exports.signup = async (req, res) => {
 //     );
 
 //     return res.status(200).json({
-//       message: "Login OTP sent successfully",
+//       message: "OTP sent successfully",
 //       otp,
 //     });
 //   } catch (err) {
@@ -104,13 +98,13 @@ exports.signup = async (req, res) => {
 //     }
 
 //     const user = await User.findOne({ phoneNumber });
+//     await Otp.deleteOne({ _id: record._id });
+
 //     if (!user) {
 //       return res
-//         .status(404)
-//         .json({ message: "User not found. Please signup." });
+//         .status(401)
+//         .json({ message: "User not found. Please signup first" });
 //     }
-
-//     await Otp.deleteOne({ _id: record._id });
 
 //     return res.status(200).json({
 //       message: "Login successful",
@@ -122,6 +116,8 @@ exports.signup = async (req, res) => {
 //   }
 // };
 
+
+
 exports.loginRequest = async (req, res) => {
   try {
     const phoneNumber = normalizePhone(req.body.phoneNumber);
@@ -129,19 +125,23 @@ exports.loginRequest = async (req, res) => {
       return res.status(400).json({ message: "Phone number is required" });
     }
 
-    // Generate OTP
+    // Generate a 4-digit OTP securely using crypto
     const otp = String(crypto.randomInt(1000, 10000));
-    const expiry = new Date(Date.now() + 2 * 60 * 1000); // 2 min
+    const expiry = new Date(Date.now() + 2 * 60 * 1000); // OTP expires in 2 minutes
 
+    // Insert or update OTP record in the database
     await Otp.findOneAndUpdate(
       { phoneNumber },
       { otp, expiry },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+    // Send OTP via SMS
+    await sendOtpSms(phoneNumber, otp);
+
     return res.status(200).json({
       message: "OTP sent successfully",
-      otp, // ⚠️ only for dev/debug; remove in production
+      otp, // You may want to remove this in production
     });
   } catch (err) {
     console.error("loginRequest error:", err);
@@ -149,45 +149,38 @@ exports.loginRequest = async (req, res) => {
   }
 };
 
-// 📌 Verify OTP (check user existence here)
 exports.loginVerify = async (req, res) => {
   try {
     const phoneNumber = normalizePhone(req.body.phoneNumber);
     const otpInput = String(req.body.otp || "").trim();
 
     if (!phoneNumber || !otpInput) {
-      return res
-        .status(400)
-        .json({ message: "phoneNumber and otp are required" });
+      return res.status(400).json({ message: "Phone number and OTP are required" });
     }
 
-    // Get OTP record
+    // Find OTP record
     const record = await Otp.findOne({ phoneNumber });
     if (!record) {
-      return res
-        .status(400)
-        .json({ message: "OTP not found. Please request a new one." });
+      return res.status(400).json({ message: "OTP not found. Please request a new one." });
     }
 
-    // Check expiry
+    // Check if OTP expired
     if (new Date(record.expiry) < new Date()) {
       await Otp.deleteOne({ _id: record._id });
       return res.status(400).json({ message: "OTP expired" });
     }
 
-    // Check OTP match
+    // Validate OTP
     if (String(record.otp) !== otpInput) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
-    // ✅ OTP correct → now check if user exists
+    // Find the user
     const user = await User.findOne({ phoneNumber });
-    await Otp.deleteOne({ _id: record._id }); // cleanup OTP
+    await Otp.deleteOne({ _id: record._id }); // Delete OTP after successful validation
 
     if (!user) {
-      return res
-        .status(401)
-        .json({ message: "User not found. Please signup first" });
+      return res.status(401).json({ message: "User not found. Please signup first" });
     }
 
     return res.status(200).json({
