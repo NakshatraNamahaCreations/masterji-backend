@@ -141,7 +141,7 @@ exports.loginRequest = async (req, res) => {
 
     return res.status(200).json({
       message: "OTP sent successfully",
-      otp, // You may want to remove this in production
+      // otp, // You may want to remove this in production
     });
   } catch (err) {
     console.error("loginRequest error:", err);
